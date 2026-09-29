@@ -1,0 +1,24 @@
+# ===== NUNCA subir chaves de API =====
+.env
+*.env
+!.env.exemplo
+
+# ===== Dados: ficam no Google Drive (pasta "notebooksvideos"), não no GitHub =====
+notedeeplearning/aulacovidct/dados/
+notedeeplearning/aulacovidct/modelos/
+
+# ===== Cópias brutas dos projetos/cursos originais (grandes e com chaves antigas no código) =====
+noteagentes/multi-ai-agent-systems-crewai/
+noteagentes/practical-multi-ai-agents-crewai/
+notedeeplearning/keras-covid19/
+noteiaformed/aiformedicine/
+
+# ===== Arquivos gerados / temporários =====
+*.zip
+*.h5
+*.keras
+*.model
+jupyter.log
+.ipynb_checkpoints/
+__pycache__/
+noteagentes/noteaulaagentes/video/secao_colab_no_notebook.png

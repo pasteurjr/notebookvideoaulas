@@ -1,0 +1,78 @@
+# Tarefas da equipe (crew) de QUALIFICAÇÃO DE LEADS
+# {dados_lead} é substituído pelos dados de cada lead quando a crew é executada.
+
+coleta_dados_lead:
+  description: >
+    Pesquise na internet e analise as seguintes informações sobre o lead:
+
+    - Informações pessoais:
+      - Nome: o nome completo do lead.
+      - Cargo: o cargo atual do lead.
+      - Relevância do cargo: o quanto o cargo do lead pesa na decisão de compra, numa escala de 0 a 10.
+      - Histórico profissional: opcionalmente, um breve resumo da trajetória profissional do lead.
+
+    - Informações da empresa:
+      - Nome da empresa: a empresa onde o lead trabalha.
+      - Setor: o setor de atuação da empresa.
+      - Porte: o número aproximado de funcionários.
+      - Faturamento: se disponível, o faturamento anual da empresa.
+      - Presença de mercado: a força da empresa no mercado, numa escala de 0 a 10.
+
+    - Nossa empresa e nosso produto:
+      - Empresa: CrewAI
+      - Produto: Plataforma de Orquestração de Múltiplos Agentes
+      - Cliente ideal (ICP): grandes empresas interessadas em automação com agentes de IA.
+      - Proposta: somos uma plataforma que permite orquestrar agentes de IA para automatizar processos em qualquer setor.
+
+    - Dados do lead:
+      {dados_lead}
+  expected_output: >
+    Um relatório completo, em português, contendo:
+    - Informações pessoais (nome, cargo, relevância do cargo e, se houver, histórico profissional).
+    - Informações da empresa (nome, setor, porte, faturamento se disponível e presença de mercado).
+
+analise_fit_cultural:
+  description: >
+    Avalie o alinhamento cultural entre a empresa do lead e a nossa organização, considerando:
+      - Valores culturais: analise os valores divulgados publicamente e a cultura interna da empresa (por exemplo: inovação, sustentabilidade, engajamento dos funcionários).
+      - Alinhamento estratégico: avalie o quanto os objetivos e a missão da empresa combinam com os objetivos estratégicos da nossa organização.
+      - Nota qualitativa: atribua uma nota de 0 a 10 para o encaixe cultural geral.
+      - Comentários: acrescente observações que justifiquem a nota.
+
+    - Nossa empresa e nosso produto:
+      - Empresa: CrewAI
+      - Produto: Plataforma de Orquestração de Múltiplos Agentes
+      - Cliente ideal (ICP): grandes empresas interessadas em automação com agentes de IA.
+      - Proposta: somos uma plataforma que permite orquestrar agentes de IA para automatizar processos em qualquer setor.
+
+    - Dados do lead:
+      {dados_lead}
+  expected_output: >
+    Um relatório de avaliação, em português, contendo:
+    - Nota de afinidade cultural (0 a 10) baseada no alinhamento de valores e objetivos estratégicos.
+    - Análise e comentários que expliquem a nota.
+
+pontuacao_e_validacao_lead:
+  description: >
+    Consolide os dados levantados e siga estes passos:
+    - Cálculo da nota: com base em critérios definidos, calcule a nota final do lead (0 a 100). Considere fatores como:
+      - Relevância do cargo
+      - Porte da empresa
+      - Presença de mercado
+      - Afinidade cultural
+    - Documentação dos critérios: liste os critérios usados para chegar à nota.
+    - Validação: revise os dados levantados e a nota calculada, verificando se estão consistentes e corretos. Faça ajustes se necessário.
+    - Relatório final: monte um resumo com a nota final validada, os critérios usados e as observações da validação.
+
+    - Nossa empresa e nosso produto:
+      - Empresa: CrewAI
+      - Produto: Plataforma de Orquestração de Múltiplos Agentes
+      - Cliente ideal (ICP): grandes empresas interessadas em automação com agentes de IA.
+      - Proposta: somos uma plataforma que permite orquestrar agentes de IA para automatizar processos em qualquer setor.
+
+    - Dados do lead:
+      {dados_lead}
+  expected_output: >
+    Um relatório de pontuação validado, em português, contendo:
+    - Nota final do lead (0 a 100) e os critérios usados.
+    - Um resumo explicando o processo de pontuação, os critérios e as observações da validação.

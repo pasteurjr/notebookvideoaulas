@@ -1,0 +1,48 @@
+# Tarefas da equipe (crew) de ENGAJAMENTO POR E-MAIL
+# {dados_pessoais}, {dados_empresa} e {pontuacao_lead} vêm do resultado da crew de qualificação.
+
+redacao_email:
+  description: >
+    Escreva um e-mail altamente personalizado usando o nome do lead, o cargo,
+    as informações da empresa e qualquer conquista pessoal ou da empresa que
+    seja relevante. O e-mail deve falar diretamente dos interesses do lead e
+    das necessidades da empresa dele.
+    Não é um contato "frio": é um retorno a um formulário que o lead preencheu,
+    então seja breve e direto.
+    Não use saudações nem despedidas, e evite frases muito complexas.
+
+    Nossa empresa e nosso produto:
+    - Empresa: CrewAI
+    - Produto: Plataforma de Orquestração de Múltiplos Agentes
+    - Cliente ideal (ICP): grandes empresas interessadas em automação com agentes de IA.
+    - Proposta: somos uma plataforma que permite orquestrar agentes de IA para automatizar processos em qualquer setor.
+
+    Use as seguintes informações:
+    Dados pessoais: {dados_pessoais}
+    Dados da empresa: {dados_empresa}
+    Pontuação do lead: {pontuacao_lead}
+  expected_output: >
+    Um rascunho de e-mail personalizado, em português, que:
+    - Chame o lead pelo nome
+    - Mencione o cargo dele e a empresa
+    - Mostre como a CrewAI atende às necessidades ou interesses específicos dele
+
+otimizacao_engajamento:
+  description: >
+    Revise o rascunho do e-mail personalizado e otimize-o com CTAs fortes e
+    ganchos de engajamento.
+    Lembre-se de que o lead entrou em contato e preencheu um formulário.
+    Seja breve e direto.
+    Não use saudações nem despedidas, e evite frases muito complexas.
+    Garanta que o e-mail incentive o lead a agendar uma reunião ou tomar
+    outra ação desejada imediatamente.
+
+    Nossa empresa e nosso produto:
+    - Empresa: CrewAI
+    - Produto: Plataforma de Orquestração de Múltiplos Agentes
+    - Cliente ideal (ICP): grandes empresas interessadas em automação com agentes de IA.
+    - Proposta: somos uma plataforma que permite orquestrar agentes de IA para automatizar processos em qualquer setor.
+  expected_output: >
+    Um e-mail otimizado, em português, pronto para envio, com:
+    - CTAs fortes
+    - Ganchos de engajamento bem posicionados que incentivem ação imediata
