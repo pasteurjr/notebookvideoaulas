@@ -1,0 +1,667 @@
+[
+ {
+  "id": "c07-000",
+  "type": "markdown",
+  "source": "<table style=\"width:100%\">\n<tr>\n<td style=\"vertical-align:middle; text-align:left;\">\n<font size=\"2\">\nSupplementary code for the <a href=\"http://mng.bz/orYv\">Build a Large Language Model From Scratch</a> book by <a href=\"https://sebastianraschka.com\">Sebastian Raschka</a><br>\n<br>Code repository: <a href=\"https://github.com/rasbt/LLMs-from-scratch\">https://github.com/rasbt/LLMs-from-scratch</a>\n</font>\n</td>\n<td style=\"vertical-align:middle; text-align:left;\">\n<a href=\"http://mng.bz/orYv\">{{IMG:LLMs-from-scratch-images_cover-small.png}}</a>\n</td>\n</tr>\n</table>"
+ },
+ {
+  "id": "c07-001",
+  "type": "markdown",
+  "source": "# Chapter 7: Finetuning To Follow Instructions"
+ },
+ {
+  "id": "c07-002",
+  "type": "code",
+  "source": "!nvidia-smi",
+  "output": "/bin/bash: /home/pasteurjr/anaconda3/envs/tfcuda11/lib/libtinfo.so.6: no version information available (required by /bin/bash)\nSat Jun 22 17:42:16 2024       \n+---------------------------------------------------------------------------------------+\n| NVIDIA-SMI 535.171.04             Driver Version: 535.171.04   CUDA Version: 12.2     |\n|-----------------------------------------+----------------------+----------------------+\n| GPU  Name          \n...[cortado]...\n            29MiB |\n|    0   N/A  N/A   2649098      G   ...10863207,7280754054385642773,131072       48MiB |\n+---------------------------------------------------------------------------------------+\n"
+ },
+ {
+  "id": "c07-003",
+  "type": "code",
+  "source": "from importlib.metadata import version\n\npkgs = [\n    \"matplotlib\",  # Plotting library\n    \"tiktoken\",    # Tokenizer\n    \"torch\",       # Deep learning library\n    \"tqdm\",        # Progress bar\n    \"tensorflow\",  # For OpenAI's pretrained weights\n]\nfor p in pkgs:\n    print(f\"{p} version: {version(p)}\")",
+  "output": "matplotlib version: 3.8.4\ntiktoken version: 0.7.0\ntorch version: 2.3.1\ntqdm version: 4.66.4\ntensorflow version: 2.8.0\n"
+ },
+ {
+  "id": "c07-004",
+  "type": "markdown",
+  "source": "{{IMG:cap07_overview.png}}"
+ },
+ {
+  "id": "c07-005",
+  "type": "markdown",
+  "source": "## 7.1 Introduction to instruction finetuning"
+ },
+ {
+  "id": "c07-006",
+  "type": "markdown",
+  "source": "- In chapter 5, we saw that pretraining an LLM involves a training procedure where it learns to generate one word at a time\n- Hence, a pretrained LLM is good at text completion, but it is not good at following instructions\n- In this chapter, we teach the LLM to follow instructions better"
+ },
+ {
+  "id": "c07-007",
+  "type": "markdown",
+  "source": "{{IMG:cap07_instruction-following.png}}"
+ },
+ {
+  "id": "c07-008",
+  "type": "markdown",
+  "source": "- The topics covered in this chapter are summarized in the figure below\n\n{{IMG:cap07_chapter-overview-1.png}}"
+ },
+ {
+  "id": "c07-009",
+  "type": "markdown",
+  "source": "## 7.2 Preparing a dataset for supervised instruction finetuning"
+ },
+ {
+  "id": "c07-010",
+  "type": "markdown",
+  "source": "- We will work with an instruction dataset I prepared for this chapter"
+ },
+ {
+  "id": "c07-011",
+  "type": "code",
+  "source": "import json\nimport os\nimport urllib\n\n\ndef download_and_load_file(file_path, url):\n\n    if not os.path.exists(file_path):\n        with urllib.request.urlopen(url) as response:\n            text_data = response.read().decode(\"utf-8\")\n        with open(file_path, \"w\", encoding=\"utf-8\") as file:\n            file.write(text_data)\n    else:\n        with open(file_path, \"r\", encoding=\"utf-8\") as file:\n            text_data = file.read()\n\n    with open(file_path, \"r\") as file:\n        data = json.load(file)\n\n    return data\n\n\nfile_path = \"instruction-data.json\"\nurl = \"https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json\"\n\ndata = download_and_load_file(file_path, url)\nprint(\"Number of entries:\", len(data))",
+  "output": "Number of entries: 1100\n"
+ },
+ {
+  "id": "c07-012",
+  "type": "markdown",
+  "source": "- Each item in the `data` list we loaded from the JSON file above is a dictionary in the following form"
+ },
+ {
+  "id": "c07-013",
+  "type": "code",
+  "source": "print(\"Example entry:\\n\", data[50])",
+  "output": "Example entry:\n {'instruction': 'Identify the correct spelling of the following word.', 'input': 'Ocassion', 'output': \"The correct spelling is 'Occasion.'\"}\n"
+ },
+ {
+  "id": "c07-014",
+  "type": "markdown",
+  "source": "- Note that the `'input'` field can be empty:"
+ },
+ {
+  "id": "c07-015",
+  "type": "code",
+  "source": "print(\"Another example entry:\\n\", data[999])",
+  "output": "Another example entry:\n {'instruction': \"What is an antonym of 'complicated'?\", 'input': '', 'output': \"An antonym of 'complicated' is 'simple'.\"}\n"
+ },
+ {
+  "id": "c07-016",
+  "type": "markdown",
+  "source": "- Instruction finetuning is often referred to as \"supervised instruction finetuning\" because it involves training a model on a dataset where the input-output pairs are explicitly provided\n- There are different ways to format the entries as inputs to the LLM; the figure below illustrates two example formats that were used for training the Alpaca (https://crfm.stanford.edu/2023/03/13/alpaca.html) and Phi-3 (https://arxiv.org/abs/2404.14219) LLMs, respectively"
+ },
+ {
+  "id": "c07-017",
+  "type": "markdown",
+  "source": "{{IMG:cap07_prompt-style.png}}"
+ },
+ {
+  "id": "c07-018",
+  "type": "markdown",
+  "source": "- In this chapter, we use Alpaca-style prompt formatting, which was the original prompt template for instruction finetuning\n- Below, we format the input that we will pass as input to the LLM"
+ },
+ {
+  "id": "c07-019",
+  "type": "code",
+  "source": "def format_input(entry):\n    instruction_text = (\n        f\"Below is an instruction that describes a task. \"\n        f\"Write a response that appropriately completes the request.\"\n        f\"\\n\\n### Instruction:\\n{entry['instruction']}\"\n    )\n\n    input_text = f\"\\n\\n### Input:\\n{entry['input']}\" if entry[\"input\"] else \"\"\n\n    return instruction_text + input_text",
+  "output": ""
+ },
+ {
+  "id": "c07-020",
+  "type": "markdown",
+  "source": "- A formatted response with input field looks like as shown below"
+ },
+ {
+  "id": "c07-021",
+  "type": "code",
+  "source": "model_input = format_input(data[50])\ndesired_response = f\"\\n\\n### Response:\\n{data[50]['output']}\"\n\nprint(model_input + desired_response)",
+  "output": "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nIdentify the correct spelling of the following word.\n\n### Input:\nOcassion\n\n### Response:\nThe correct spelling is 'Occasion.'\n"
+ },
+ {
+  "id": "c07-022",
+  "type": "markdown",
+  "source": "- Below is a formatted response without an input field"
+ },
+ {
+  "id": "c07-023",
+  "type": "code",
+  "source": "model_input = format_input(data[999])\ndesired_response = f\"\\n\\n### Response:\\n{data[999]['output']}\"\n\nprint(model_input + desired_response)",
+  "output": "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nWhat is an antonym of 'complicated'?\n\n### Response:\nAn antonym of 'complicated' is 'simple'.\n"
+ },
+ {
+  "id": "c07-024",
+  "type": "markdown",
+  "source": "- Lastly, before we prepare the PyTorch data loaders in the next section, we divide the dataset into a training, validation, and test set"
+ },
+ {
+  "id": "c07-025",
+  "type": "code",
+  "source": "train_portion = int(len(data) * 0.85)  # 85% for training\ntest_portion = int(len(data) * 0.1)   # 10% for testing\nval_portion = len(data) - train_portion - test_portion  # Remaining 5% for validation\n\ntrain_data = data[:train_portion]\ntest_data = data[train_portion:train_portion + test_portion]\nval_data = data[train_portion + test_portion:]",
+  "output": ""
+ },
+ {
+  "id": "c07-026",
+  "type": "code",
+  "source": "print(\"Training set length:\", len(train_data))\nprint(\"Validation set length:\", len(val_data))\nprint(\"Test set length:\", len(test_data))",
+  "output": "Training set length: 935\nValidation set length: 55\nTest set length: 110\n"
+ },
+ {
+  "id": "c07-027",
+  "type": "markdown",
+  "source": "## 7.3 Organizing data into training batches"
+ },
+ {
+  "id": "c07-028",
+  "type": "markdown",
+  "source": "{{IMG:cap07_chapter-overview-2.png}}"
+ },
+ {
+  "id": "c07-029",
+  "type": "markdown",
+  "source": "- We tackle this dataset batching in several steps, as summarized in the figure below\n\n{{IMG:cap07_detailed-batching.png}}"
+ },
+ {
+  "id": "c07-030",
+  "type": "markdown",
+  "source": "- First, we implement an `InstructionDataset` class that pre-tokenizes all inputs in the dataset, similar to the `SpamDataset` in chapter 6\n\n{{IMG:cap07_pretokenizing.png}}"
+ },
+ {
+  "id": "c07-031",
+  "type": "code",
+  "source": "import torch\nfrom torch.utils.data import Dataset\n\n\nclass InstructionDataset(Dataset):\n    def __init__(self, data, tokenizer):\n        self.data = data\n\n        # Pre-tokenize texts\n        self.encoded_texts = []\n        for entry in data:\n            instruction_plus_input = format_input(entry)\n            response_text = f\"\\n\\n### Response:\\n{entry['output']}\"\n            full_text = instruction_plus_input + response_text\n            self.encoded_texts.append(\n                tokenizer.encode(full_text)\n            )\n\n    def __getitem__(self, index):\n        return self.encoded_texts[index]\n\n    def __len__(self):\n        return len(self.data)",
+  "output": ""
+ },
+ {
+  "id": "c07-032",
+  "type": "markdown",
+  "source": "- Similar to chapter 6, we want to collect multiple training examples in a batch to accelerate training; this requires padding all inputs to a similar length\n- Also similar to the previous chapter, we use the `<|endoftext|>` token as a padding token"
+ },
+ {
+  "id": "c07-033",
+  "type": "code",
+  "source": "import tiktoken\ntokenizer = tiktoken.get_encoding(\"gpt2\")\n\nprint(tokenizer.encode(\"<|endoftext|>\", allowed_special={\"<|endoftext|>\"}))",
+  "output": "[50256]\n"
+ },
+ {
+  "id": "c07-034",
+  "type": "markdown",
+  "source": "- In chapter 6, we padded all examples in a dataset to the same length\n  - Here, we take a more sophisticated approach and develop a custom \"collate\" function that we can pass to the data loader\n  - This custom collate function pads the training examples in each batch to have the same length (but different batches can have different lengths)"
+ },
+ {
+  "id": "c07-035",
+  "type": "markdown",
+  "source": "{{IMG:cap07_padding.png}}"
+ },
+ {
+  "id": "c07-036",
+  "type": "code",
+  "source": "def custom_collate_draft_1(\n    batch,\n    pad_token_id=50256,\n    device=\"cpu\"\n):\n    # Find the longest sequence in the batch\n    batch_max_length = max(len(item)+1 for item in batch)\n\n    # Pad and prepare inputs\n    inputs_lst = []\n\n    for item in batch:\n        new_item = item.copy()\n        # Add an <|endoftext|> token\n        new_item += [pad_token_id]\n        # Pad sequences to max_length\n        # this always adds at least 1 additional padding tokens\n        padded = new_item + [pad_token_id] * (batch_max_length - len(new_item))\n        # We remove this extra padded token again here\n        inputs = torch.tensor(padded[:-1])\n        inputs_lst.append(inputs)\n\n    # Convert list of inputs to tensor and transfer to target device\n    inputs_tensor = torch.stack(inputs_lst).to(device)\n    return inputs_tensor",
+  "output": ""
+ },
+ {
+  "id": "c07-037",
+  "type": "code",
+  "source": "inputs_1 = [0, 1, 2, 3, 4]\ninputs_2 = [5, 6]\ninputs_3 = [7, 8, 9]\n\nbatch = (\n    inputs_1,\n    inputs_2,\n    inputs_3\n)\n\nprint(custom_collate_draft_1(batch))",
+  "output": "tensor([[    0,     1,     2,     3,     4],\n        [    5,     6, 50256, 50256, 50256],\n        [    7,     8,     9, 50256, 50256]])\n"
+ },
+ {
+  "id": "c07-038",
+  "type": "markdown",
+  "source": "{{IMG:cap07_batching-step-4.png}}"
+ },
+ {
+  "id": "c07-039",
+  "type": "markdown",
+  "source": "- Above, we only returned the inputs to the LLM; however, for LLM training, we also need the target values\n- Similar to pretraining an LLM, the targets are the inputs shifted by 1 position to the right, so the LLM learns to predict the next token"
+ },
+ {
+  "id": "c07-040",
+  "type": "markdown",
+  "source": "{{IMG:cap07_inputs-targets.png}}"
+ },
+ {
+  "id": "c07-041",
+  "type": "code",
+  "source": "def custom_collate_draft_2(\n    batch,\n    pad_token_id=50256,\n    device=\"cpu\"\n):\n    # Find the longest sequence in the batch\n    batch_max_length = max(len(item)+1 for item in batch)\n\n    # Pad and prepare inputs\n    inputs_lst, targets_lst = [], []\n\n    for item in batch:\n        new_item = item.copy()\n        # Add an <|endoftext|> token\n        new_item += [pad_token_id]\n        # Pad sequences to max_length\n        padded = new_item + [pad_token_id] * (batch_max_length - len(new_item))\n        inputs = torch.tensor(padded[:-1])  # Truncate the last token for inputs\n        targets = torch.tensor(padded[1:])  # Shift +1 to the right for targets\n        inputs_lst.append(inputs)\n        targets_lst.append(targets)\n\n    # Convert list of inputs to tensor and transfer to target device\n    inputs_tensor = torch.stack(inputs_lst).to(device)\n    targets_tensor = torch.stack(targets_lst).to(device)\n    return inputs_tensor, targets_tensor",
+  "output": ""
+ },
+ {
+  "id": "c07-042",
+  "type": "code",
+  "source": "inputs, targets = custom_collate_draft_2(batch)\nprint(inputs)\nprint(targets)",
+  "output": "tensor([[    0,     1,     2,     3,     4],\n        [    5,     6, 50256, 50256, 50256],\n        [    7,     8,     9, 50256, 50256]])\ntensor([[    1,     2,     3,     4, 50256],\n        [    6, 50256, 50256, 50256, 50256],\n        [    8,     9, 50256, 50256, 50256]])\n"
+ },
+ {
+  "id": "c07-043",
+  "type": "markdown",
+  "source": "- Next, we introduce an `ignore_index` value to replace all padding token IDs with a new value; the purpose of this `ignore_index` is that we can ignore padding values in the loss function (more on that later)\n\n{{IMG:cap07_batching-step-5.png}}\n\n- Concretely, this means that we replace the token IDs corresponding to `50256` with `-100` as illustrated below"
+ },
+ {
+  "id": "c07-044",
+  "type": "markdown",
+  "source": "{{IMG:cap07_ignore-index.png}}"
+ },
+ {
+  "id": "c07-045",
+  "type": "markdown",
+  "source": "- (In addition, we also introduce the `allowed_max_length` in case we want to limit the length of the samples; this will be useful if you plan to work with your own datasets that are longer than the 1024 token context size supported by the GPT-2 model)"
+ },
+ {
+  "id": "c07-046",
+  "type": "code",
+  "source": "def custom_collate_fn(\n    batch,\n    pad_token_id=50256,\n    ignore_index=-100,\n    allowed_max_length=None,\n    device=\"cpu\"\n):\n    # Find the longest sequence in the batch\n    batch_max_length = max(len(item)+1 for item in batch)\n\n    # Pad and prepare inputs and targets\n    inputs_lst, targets_lst = [], []\n\n    for item in batch:\n        new_item = item.copy()\n        # Add an <|endoftext|> token\n        new_item += [pad_token_id]\n        # Pad sequences to max_length\n        padded = new_item + [pad_token_id] * (batch_max_length - len(new_item))\n        inputs = torch.tensor(padded[:-1])  # Truncate the last token for inputs\n        targets = torch.tensor(padded[1:])  # Shift +1 to the right for targets\n\n        # New: Replace all but the first padding tokens in targets by ignore_index\n        mask = targets == pad_token_id\n        indices = torch.nonzero(mask).squeeze()\n        if indices.numel() > 1:\n            targets[indices[1:]] = ignore_index\n\n        # New: Optionally truncate to maximum sequence length\n        if allowed_max_length is not None:\n            inputs = inputs[:allowed_max_length]\n            targets = targets[:allowed_max_length]\n\n        inputs_lst.append(inputs)\n        targets_lst.append(targets)\n\n    # Convert list of inputs and targets to tensors and transfer to target device\n    inputs_tensor = torch.stack(inputs_lst).to(device)\n    targets_tensor = torch.stack(targets_lst).to(device)\n\n    return inputs_tensor, targets_tensor",
+  "output": ""
+ },
+ {
+  "id": "c07-047",
+  "type": "code",
+  "source": "inputs, targets = custom_collate_fn(batch)\nprint(inputs)\nprint(targets)",
+  "output": "tensor([[    0,     1,     2,     3,     4],\n        [    5,     6, 50256, 50256, 50256],\n        [    7,     8,     9, 50256, 50256]])\ntensor([[    1,     2,     3,     4, 50256],\n        [    6, 50256,  -100,  -100,  -100],\n        [    8,     9, 50256,  -100,  -100]])\n"
+ },
+ {
+  "id": "c07-048",
+  "type": "markdown",
+  "source": "- Let's see what this replacement by -100 accomplishes\n- For illustration purposes, let's assume we have a small classification task with 2 class labels, 0 and 1, similar to chapter 6\n- If we have the following logits values (outputs of the last layer of the model), we calculate the following loss"
+ },
+ {
+  "id": "c07-049",
+  "type": "code",
+  "source": "logits_1 = torch.tensor(\n    [[-1.0, 1.0],  # 1st training example\n     [-0.5, 1.5]]  # 2nd training example\n)\ntargets_1 = torch.tensor([0, 1])\n\n\nloss_1 = torch.nn.functional.cross_entropy(logits_1, targets_1)\nprint(loss_1)",
+  "output": "tensor(1.1269)\n"
+ },
+ {
+  "id": "c07-050",
+  "type": "markdown",
+  "source": "- Now, adding one more training example will, as expected, influence the loss"
+ },
+ {
+  "id": "c07-051",
+  "type": "code",
+  "source": "logits_2 = torch.tensor(\n    [[-1.0, 1.0],\n     [-0.5, 1.5],\n     [-0.5, 1.5]]  # New 3rd training example\n)\ntargets_2 = torch.tensor([0, 1, 1])\n\nloss_2 = torch.nn.functional.cross_entropy(logits_2, targets_2)\nprint(loss_2)",
+  "output": "tensor(0.7936)\n"
+ },
+ {
+  "id": "c07-052",
+  "type": "markdown",
+  "source": "- Let's see what happens if we replace the class label of one of the examples with -100"
+ },
+ {
+  "id": "c07-053",
+  "type": "code",
+  "source": "targets_3 = torch.tensor([0, 1, -100])\n\nloss_3 = torch.nn.functional.cross_entropy(logits_2, targets_3)\nprint(loss_3)\nprint(\"loss_1 == loss_3:\", loss_1 == loss_3)",
+  "output": "tensor(1.1269)\nloss_1 == loss_3: tensor(True)\n"
+ },
+ {
+  "id": "c07-054",
+  "type": "markdown",
+  "source": "- As we can see, the resulting loss on these 3 training examples is the same as the loss we calculated from the 2 training examples, which means that the cross entropy loss function ignored the training example with the -100 label\n- By default, PyTorch has the `cross_entropy(..., ignore_index=-100)` setting to ignore examples corresponding to the label -100\n- Using this -100 `ignore_index`, we can ignore the additional end-of-text (padding) tokens in the batches that we used to pad the training examples to equal length\n- However, we don't want to ignore the first instance of the end-of-text (padding) token (50256) because it can help signal to the LLM when the response is complete"
+ },
+ {
+  "id": "c07-055",
+  "type": "markdown",
+  "source": "- In practice, it is also common to mask out the target token IDs that correspond to the instruction, as illustrated in the figure below (this is a recommended reader exercise after completing the chapter)"
+ },
+ {
+  "id": "c07-056",
+  "type": "markdown",
+  "source": "{{IMG:cap07_mask-instructions.png}}"
+ },
+ {
+  "id": "c07-057",
+  "type": "markdown",
+  "source": "## 7.4 Creating data loaders for an instruction dataset"
+ },
+ {
+  "id": "c07-058",
+  "type": "markdown",
+  "source": "- In this section, we use the `InstructionDataset` class and `custom_collate_fn` function to instantiate the training, validation, and test data loaders"
+ },
+ {
+  "id": "c07-059",
+  "type": "markdown",
+  "source": "{{IMG:cap07_chapter-overview-3.png}}"
+ },
+ {
+  "id": "c07-060",
+  "type": "markdown",
+  "source": "- Another additional detail of the previous `custom_collate_fn` function is that we now directly move the data to the target device (e.g., GPU) instead of doing it in the main training loop, which improves efficiency because it can be carried out as a background process when we use the  `custom_collate_fn` as part of the data loader\n- Using the `partial` function from Python's `functools` standard library, we create a new function with the `device` argument  of the original function pre-filled"
+ },
+ {
+  "id": "c07-061",
+  "type": "code",
+  "source": "from functools import partial\n\ndevice = torch.device(\"cuda\" if torch.cuda.is_available() else \"cpu\")\nprint(\"Device:\", device)\n\ncustomized_collate_fn = partial(custom_collate_fn, device=device, allowed_max_length=1024)",
+  "output": "Device: cuda\n"
+ },
+ {
+  "id": "c07-062",
+  "type": "markdown",
+  "source": "- Next, we instantiate the data loaders similar to previous chapters, except that we now provide our own collate function for the batching process"
+ },
+ {
+  "id": "c07-063",
+  "type": "code",
+  "source": "from torch.utils.data import DataLoader\n\n\nnum_workers = 0\nbatch_size = 8\n\ntorch.manual_seed(123)\n\ntrain_dataset = InstructionDataset(train_data, tokenizer)\ntrain_loader = DataLoader(\n    train_dataset,\n    batch_size=batch_size,\n    collate_fn=customized_collate_fn,\n    shuffle=True,\n    drop_last=True\n)",
+  "output": ""
+ },
+ {
+  "id": "c07-064",
+  "type": "code",
+  "source": "val_dataset = InstructionDataset(val_data, tokenizer)\nval_loader = DataLoader(\n    val_dataset,\n    batch_size=batch_size,\n    collate_fn=customized_collate_fn,\n    shuffle=False,\n    drop_last=False\n)\n\ntest_dataset = InstructionDataset(test_data, tokenizer)\ntest_loader = DataLoader(\n    test_dataset,\n    batch_size=batch_size,\n    collate_fn=customized_collate_fn,\n    shuffle=False,\n    drop_last=False\n)",
+  "output": ""
+ },
+ {
+  "id": "c07-065",
+  "type": "markdown",
+  "source": "\n\n- Let's see what the dimensions of the resulting input and target batches look like"
+ },
+ {
+  "id": "c07-066",
+  "type": "code",
+  "source": "print(\"Train loader:\")\nfor inputs, targets in train_loader:\n    print(inputs.shape, targets.shape)",
+  "output": "Train loader:\ntorch.Size([8, 61]) torch.Size([8, 61])\ntorch.Size([8, 76]) torch.Size([8, 76])\ntorch.Size([8, 73]) torch.Size([8, 73])\ntorch.Size([8, 68]) torch.Size([8, 68])\ntorch.Size([8, 65]) torch.Size([8, 65])\ntorch.Size([8, 72]) torch.Size([8, 72])\ntorch.Size([8, 80]) torch.Size([8, 80])\ntorch.Size([8, 67]) torch.Size([8, 67])\ntorch.Size([8, 62]) torch.Size([8, 62])\ntorch.Size([8, 75]) torch.Size([8, 75])\ntorch.Size([8, 62]) torch.Size([8, 6\n...[cortado]...\ntorch.Size([8, 64]) torch.Size([8, 64])\ntorch.Size([8, 83]) torch.Size([8, 83])\ntorch.Size([8, 66]) torch.Size([8, 66])\ntorch.Size([8, 74]) torch.Size([8, 74])\ntorch.Size([8, 69]) torch.Size([8, 69])\n"
+ },
+ {
+  "id": "c07-067",
+  "type": "markdown",
+  "source": "- As we can see based on the output above, all batches have a batch size of 8 but a different length, as expected\n- Let's also double-check that the inputs contain the `<|endoftext|>` padding tokens corresponding to token ID 50256 by printing the contents of the first training example in the `inputs` batch"
+ },
+ {
+  "id": "c07-068",
+  "type": "code",
+  "source": "print(inputs[0])",
+  "output": "tensor([21106,   318,   281, 12064,   326,  8477,   257,  4876,    13, 19430,\n          257,  2882,   326, 20431, 32543,   262,  2581,    13,   198,   198,\n        21017, 46486,    25,   198, 30003,  6525,   262,  6827,  1262,   257,\n          985,   576,    13,   198,   198, 21017, 23412,    25,   198,   464,\n         5156,   318,   845, 13779,    13,   198,   198, 21017, 18261,    25,\n          198,   464,  5156,   318,   355, 13779,   355,   257,  4936,    13,\n        50256, 50256, 50256, 50256, 50256, 50256, 50256, 50256, 50256],\n       device='cuda:0')\n"
+ },
+ {
+  "id": "c07-069",
+  "type": "markdown",
+  "source": "- Similarly, we visually double-check that the targets contain the -100 placeholder tokens"
+ },
+ {
+  "id": "c07-070",
+  "type": "code",
+  "source": "print(targets[0])",
+  "output": "tensor([  318,   281, 12064,   326,  8477,   257,  4876,    13, 19430,   257,\n         2882,   326, 20431, 32543,   262,  2581,    13,   198,   198, 21017,\n        46486,    25,   198, 30003,  6525,   262,  6827,  1262,   257,   985,\n          576,    13,   198,   198, 21017, 23412,    25,   198,   464,  5156,\n          318,   845, 13779,    13,   198,   198, 21017, 18261,    25,   198,\n          464,  5156,   318,   355, 13779,   355,   257,  4936,    13, 50256,\n         -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100],\n       device='cuda:0')\n"
+ },
+ {
+  "id": "c07-071",
+  "type": "markdown",
+  "source": "## 7.5 Loading a pretrained LLM"
+ },
+ {
+  "id": "c07-072",
+  "type": "markdown",
+  "source": "- In this section, we load a pretrained GPT model using the same code that we used in section 5.5 of chapter 5 and section 6.4 in chapter 6"
+ },
+ {
+  "id": "c07-073",
+  "type": "markdown",
+  "source": "{{IMG:cap07_chapter-overview-4.png}}"
+ },
+ {
+  "id": "c07-074",
+  "type": "markdown",
+  "source": "- However, instead of loading the smallest 124 million parameter model, we load the medium version with 355 parameters since the 124 million model is too small for achieving qualitatively reasonable results via instruction finetuning"
+ },
+ {
+  "id": "c07-075",
+  "type": "code",
+  "source": "!nvidia-smi\n",
+  "output": "/bin/bash: /home/pasteurjr/anaconda3/envs/tfcuda11/lib/libtinfo.so.6: no version information available (required by /bin/bash)\nFri Jun 21 23:41:38 2024       \n+---------------------------------------------------------------------------------------+\n| NVIDIA-SMI 535.171.04             Driver Version: 535.171.04   CUDA Version: 12.2     |\n|-----------------------------------------+----------------------+----------------------+\n| GPU  Name          \n...[cortado]...\nython      104MiB |\n|    0   N/A  N/A   3580209      C   ...anaconda3/envs/gptenvpt4/bin/python      660MiB |\n+---------------------------------------------------------------------------------------+\n"
+ },
+ {
+  "id": "c07-076",
+  "type": "code",
+  "source": "from gpt_download import download_and_load_gpt2\nfrom previous_chapters import GPTModel, load_weights_into_gpt\n\n\nBASE_CONFIG = {\n    \"vocab_size\": 50257,     # Vocabulary size\n    \"context_length\": 1024,  # Context length\n    \"drop_rate\": 0.0,        # Dropout rate\n    \"qkv_bias\": True         # Query-key-value bias\n}\n\nmodel_configs = {\n    \"gpt2-small (124M)\": {\"emb_dim\": 768, \"n_layers\": 12, \"n_heads\": 12},\n    \"gpt2-medium (355M)\": {\"emb_dim\": 1024, \"n_layers\": 24, \"n_heads\": 16},\n    \"gpt2-large (774M)\": {\"emb_dim\": 1280, \"n_layers\": 36, \"n_heads\": 20},\n    \"gpt2-xl (1558M)\": {\"emb_dim\": 1600, \"n_layers\": 48, \"n_heads\": 25},\n}\n\nCHOOSE_MODEL = \"gpt2-medium (355M)\"\n\nBASE_CONFIG.update(model_configs[CHOOSE_MODEL])\n\nmodel_size = CHOOSE_MODEL.split(\" \")[-1].lstrip(\"(\").rstrip(\")\")\nsettings, params = download_and_load_gpt2(model_size=model_size, models_dir=\"gpt2\")\n\nmodel = GPTModel(BASE_CONFIG)\nload_weights_into_gpt(model, params)\nmodel.eval();",
+  "output": "File already exists and is up-to-date: gpt2/355M/checkpoint\nFile already exists and is up-to-date: gpt2/355M/encoder.json\nFile already exists and is up-to-date: gpt2/355M/hparams.json\nFile already exists and is up-to-date: gpt2/355M/model.ckpt.data-00000-of-00001\nFile already exists and is up-to-date: gpt2/355M/model.ckpt.index\nFile already exists and is up-to-date: gpt2/355M/model.ckpt.meta\nFile already exists and is up-to-date: gpt2/355M/vocab.bpe\n2024-06-21 23:41:17.211999: W tensorflow/core/framework/cpu_allocator_impl.cc:82] Allocation of 205852672 exceeds 10% of free system memory.\n"
+ },
+ {
+  "id": "c07-077",
+  "type": "markdown",
+  "source": "- Before we start finetuning the model in the next section, let's see how it performs on one of the validation tasks"
+ },
+ {
+  "id": "c07-078",
+  "type": "code",
+  "source": "torch.manual_seed(123)\n\ninput_text = format_input(val_data[0])\nprint(input_text)",
+  "output": "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nConvert the active sentence to passive: 'The chef cooks the meal every day.'\n"
+ },
+ {
+  "id": "c07-079",
+  "type": "code",
+  "source": "from previous_chapters import (\n    generate,\n    text_to_token_ids,\n    token_ids_to_text\n)\n\ntoken_ids = generate(\n    model=model,\n    idx=text_to_token_ids(input_text, tokenizer),\n    max_new_tokens=35,\n    context_size=BASE_CONFIG[\"context_length\"],\n    eos_id=50256,\n)\ngenerated_text = token_ids_to_text(token_ids, tokenizer)",
+  "output": ""
+ },
+ {
+  "id": "c07-080",
+  "type": "markdown",
+  "source": "- Note that the `generate` function we used in previous chapters returns the combined input and output text, which was convenient in the previous section for creating legible text\n- To isolate the response, we can subtract the length of the instruction from the start of the `generated_text`"
+ },
+ {
+  "id": "c07-081",
+  "type": "code",
+  "source": "response_text = generated_text[len(input_text):].strip()\nprint(response_text)",
+  "output": "### Response:\n\nThe chef cooks the meal every day.\n\n### Instruction:\n\nConvert the active sentence to passive: 'The chef cooks the\n"
+ },
+ {
+  "id": "c07-082",
+  "type": "markdown",
+  "source": "- As we can see, the model is not capable of following the instructions, yet; it creates a \"Response\" section but it simply repeats the original input sentence as well as the instruction"
+ },
+ {
+  "id": "c07-083",
+  "type": "markdown",
+  "source": "## 7.6 Finetuning the LLM on instruction data"
+ },
+ {
+  "id": "c07-084",
+  "type": "markdown",
+  "source": "- In this section, we finetune the model\n\n{{IMG:cap07_chapter-overview-5.png}}\n\n- Note that we can reuse all the loss calculation and training functions that we used in previous chapters"
+ },
+ {
+  "id": "c07-085",
+  "type": "code",
+  "source": "from previous_chapters import (\n    calc_loss_loader,\n    train_model_simple\n)",
+  "output": ""
+ },
+ {
+  "id": "c07-086",
+  "type": "markdown",
+  "source": "- Let's calculate the initial training and validation set loss before we start training (as in previous chapters, the goal is to minimize the loss)"
+ },
+ {
+  "id": "c07-087",
+  "type": "code",
+  "source": "model.to(device)\n\ntorch.manual_seed(123)\n\nwith torch.no_grad():\n    train_loss = calc_loss_loader(train_loader, model, device, num_batches=5)\n    val_loss = calc_loss_loader(val_loader, model, device, num_batches=5)\n\nprint(\"Training loss:\", train_loss)\nprint(\"Validation loss:\", val_loss)",
+  "output": "Training loss: 3.8259098529815674\nValidation loss: 3.761934232711792\n"
+ },
+ {
+  "id": "c07-088",
+  "type": "markdown",
+  "source": "- Note that the training is a bit more expensive than in previous chapters since we are using a larger model (355 million instead of 124 million parameters)\n- The runtimes for various devices are shown for reference below (running this notebook on a compatible GPU device requires no changes to the code)"
+ },
+ {
+  "id": "c07-089",
+  "type": "markdown",
+  "source": "<div style=\"text-align: left;\">\n    \n| Model              | Device                | Runtime for 2 Epochs |\n|--------------------|-----------------------|----------------------|\n| gpt2-medium (355M) | CPU (M3 MacBook Air)  | 15.78 minutes        |\n| gpt2-medium (355M) | GPU (L4)              | 1.83 minutes         |\n| gpt2-medium (355M) | GPU (A100)            | 0.86 minutes         |\n| gpt2-small (124M)  | CPU (M3 MacBook Air)  | 5.74 minutes         |\n| gpt2-small (124M)  | GPU (L4)              | 0.69 minutes         |\n| gpt2-small (124M)  | GPU (A100)            | 0.39 minutes         |\n\n</div>\n\n- I ran this notebook using the `\"gpt2-medium (355M)\"` model"
+ },
+ {
+  "id": "c07-090",
+  "type": "code",
+  "source": "import time\n\nstart_time = time.time()\n\ntorch.manual_seed(123)\n\noptimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)\n\nnum_epochs = 2\n\ntrain_losses, val_losses, tokens_seen = train_model_simple(\n    model, train_loader, val_loader, optimizer, device,\n    num_epochs=num_epochs, eval_freq=5, eval_iter=5,\n    start_context=format_input(val_data[0]), tokenizer=tokenizer\n)\n\nend_time = time.time()\nexecution_time_minutes = (end_time - start_time) / 60\nprint(f\"Training completed in {execution_time_minutes:.2f} minutes.\")",
+  "output": "Ep 1 (Step 000000): Train loss 2.637, Val loss 2.626\nEp 1 (Step 000005): Train loss 1.174, Val loss 1.102\nEp 1 (Step 000010): Train loss 0.872, Val loss 0.944\nEp 1 (Step 000015): Train loss 0.857, Val loss 0.906\nEp 1 (Step 000020): Train loss 0.776, Val loss 0.881\nEp 1 (Step 000025): Train loss 0.754, Val loss 0.859\nEp 1 (Step 000030): Train loss 0.799, Val loss 0.836\nEp 1 (Step 000035): Train loss 0.714, Val loss 0.808\nEp 1 (Step 000040): Train \n...[cortado]...\ning is an instruction that describes a task. Write a response that appropriately completes the request.  ### Instruction: What is the capital of the United Kingdom\nTraining completed in 2.07 minutes.\n"
+ },
+ {
+  "id": "c07-091",
+  "type": "markdown",
+  "source": "- As we can see based on the outputs above, the model trains well, as we can tell based on the decreasing training loss and validation loss values\n- Furthermore, based on the response text printed after each epoch, we can see that the model correctly follows the instruction to convert the input sentence `'The chef cooks the meal every day.'` into passive voice `'The meal is cooked every day by the chef.'` (We will properly format and evaluate the responses in a later section)\n- Finally, let's take a look at the training and validation loss curves"
+ },
+ {
+  "id": "c07-092",
+  "type": "code",
+  "source": "import matplotlib.pyplot as plt\nfrom previous_chapters import plot_losses\n\n\nplt.figure(figsize=(12, 6))\nepochs_tensor = torch.linspace(0, num_epochs, len(train_losses))\nplot_losses(epochs_tensor, tokens_seen, train_losses, val_losses)",
+  "output": "<Figure size 1200x600 with 0 Axes><Figure size 500x300 with 2 Axes> [IMAGEM/GRAFICO]"
+ },
+ {
+  "id": "c07-093",
+  "type": "markdown",
+  "source": "- As we can see, the loss decreases sharply at the beginning of the first epoch, which means the model starts learning quickly\n- We can see that slight overfitting sets in at around 1 training epoch"
+ },
+ {
+  "id": "c07-094",
+  "type": "markdown",
+  "source": "## 7.7 Extracting and saving responses"
+ },
+ {
+  "id": "c07-095",
+  "type": "markdown",
+  "source": "{{IMG:cap07_chapter-overview-6.png}}"
+ },
+ {
+  "id": "c07-096",
+  "type": "markdown",
+  "source": "- In this section, we save the test set responses for scoring in the next section\n- We also save a copy of the model for future use\n- But first, let's take a brief look at the responses generated by the finetuned model"
+ },
+ {
+  "id": "c07-097",
+  "type": "code",
+  "source": "torch.manual_seed(123)\n\n\nfor entry in test_data[:3]:\n\n    input_text = format_input(entry)\n\n    token_ids = generate(\n        model=model,\n        idx=text_to_token_ids(input_text, tokenizer).to(device),\n        max_new_tokens=256,\n        context_size=BASE_CONFIG[\"context_length\"],\n        eos_id=50256\n    )\n    generated_text = token_ids_to_text(token_ids, tokenizer)\n    response_text = generated_text[len(input_text):].replace(\"### Response:\", \"\").strip()\n\n    print(input_text)\n    print(f\"\\nCorrect response:\\n>> {entry['output']}\")\n    print(f\"\\nModel response:\\n>> {response_text.strip()}\")\n    print(\"-------------------------------------\")",
+  "output": "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nRewrite the sentence using a simile.\n\n### Input:\nThe car is very fast.\n\nCorrect response:\n>> The car is as fast as lightning.\n\nModel response:\n>> The car is as fast as a cheetah.\n-------------------------------------\nBelow is an instruction that describes a task. Write a response that appropriately completes the request.\n\n##\n...[cortado]...\nInstruction:\nName the author of 'Pride and Prejudice'.\n\nCorrect response:\n>> Jane Austen.\n\nModel response:\n>> The author of 'Pride and Prejudice' is Jane Austen.\n-------------------------------------\n"
+ },
+ {
+  "id": "c07-098",
+  "type": "markdown",
+  "source": "- As we can see based on the test set instructions, given responses, and the model's responses, the model performs relatively well\n- The answers to the first and last instructions are clearly correct\n- The second answer is close; the model answers with \"cumulus cloud\" instead of \"cumulonimbus\" (however, note that cumulus clouds can develop into cumulonimbus clouds, which are capable of producing thunderstorms)\n- Most importantly, we can see that model evaluation is not as straightforward as in the previous chapter, where we just had to calculate the percentage of correct spam/non-spam class labels to obtain the classification accuracy\n- In practice, instruction-finetuned LLMs such as chatbots are evaluated via multiple approaches\n  - short-answer and multiple choice benchmarks such as MMLU (\"Measuring Massive Multitask Language Understanding\", [https://arxiv.org/abs/2009.03300](https://arxiv.org/abs/2009.03300)), which test the knowledge of a model\n  - human preference comparison to other LLMs, such as LMSYS chatbot arena ([https://arena.lmsys.org](https://arena.lmsys.org))\n  - automated conversational benchmarks, where another LLM like GPT-4 is used to evaluate the responses, such as AlpacaEval ([https://tatsu-lab.github.io/alpaca_eval/](https://tatsu-lab.github.io/alpaca_eval/))\n\n- In the next section, we will use an approach similar to AlpaceEval and use another LLM to evaluate the responses of our model; however, we will use our own test set instead of using a publicly available benchmark dataset\n- For this, we add the model response to the `test_set` dictionary and save it as a `\"instruction-data-with-response.json\"` file for record-keeping so that we can load and analyze it in separate Python sessions if needed"
+ },
+ {
+  "id": "c07-099",
+  "type": "code",
+  "source": "from tqdm import tqdm\n\nfor i, entry in tqdm(enumerate(test_data), total=len(test_data)):\n\n    input_text = format_input(entry)\n\n    token_ids = generate(\n        model=model,\n        idx=text_to_token_ids(input_text, tokenizer).to(device),\n        max_new_tokens=256,\n        context_size=BASE_CONFIG[\"context_length\"],\n        eos_id=50256\n    )\n    generated_text = token_ids_to_text(token_ids, tokenizer)\n    response_text = generated_text[len(input_text):].replace(\"### Response:\", \"\").strip()\n\n    test_data[i][\"model_response\"] = response_text\n\n\nwith open(\"instruction-data-with-response.json\", \"w\") as file:\n    json.dump(test_data, file, indent=4)  # \"indent\" for pretty-printing",
+  "output": "100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 110/110 [00:55<00:00,  1.99it/s]\n"
+ },
+ {
+  "id": "c07-100",
+  "type": "markdown",
+  "source": "- Let's double-check one of the entries to see whether the responses have been added to the `test_set` dictionary correctly"
+ },
+ {
+  "id": "c07-101",
+  "type": "code",
+  "source": "print(test_data[1])",
+  "output": "{'instruction': 'What type of cloud is typically associated with thunderstorms?', 'input': '', 'output': 'The type of cloud typically associated with thunderstorms is cumulonimbus.'}\n"
+ },
+ {
+  "id": "c07-102",
+  "type": "markdown",
+  "source": "- Finally, we also save the model in case we want to reuse it in the future"
+ },
+ {
+  "id": "c07-103",
+  "type": "code",
+  "source": "import re\n\nmodel.cpu()\nfile_name = f\"{re.sub(r'[ ()]', '', CHOOSE_MODEL) }-sft.pth\"\ntorch.save(model.state_dict(), file_name)\nprint(f\"Model saved as {file_name}\")\n\n# Load model via\n# model.load_state_dict(torch.load(\"gpt2-medium355M-sft.pth\"))",
+  "output": "Model saved as gpt2-medium355M-sft.pth\n"
+ },
+ {
+  "id": "c07-104",
+  "type": "markdown",
+  "source": "## 7.8 Evaluating the finetuned LLM"
+ },
+ {
+  "id": "c07-105",
+  "type": "markdown",
+  "source": "{{IMG:cap07_chapter-overview-7.png}}"
+ },
+ {
+  "id": "c07-106",
+  "type": "markdown",
+  "source": "- In this section, we automate the response evaluation of the finetuned LLM using another, larger LLM\n- In particular, we use an instruction-finetuned 8 billion parameter Llama 3 model by Meta AI that can be run locally via ollama ([https://ollama.com](https://ollama.com))\n- (Alternatively, if you prefer using a more capable LLM like OpenAI's GPT-4 via the ChatGPT API, please see the [../03_model-evaluation/llm-instruction-eval-ollama.ipynb](../03_model-evaluation/llm-instruction-eval-ollama.ipynb) notebook)"
+ },
+ {
+  "id": "c07-107",
+  "type": "markdown",
+  "source": "- Ollama is an application to run LLMs efficiently\n- It is a wrapper around llama.cpp ([https://github.com/ggerganov/llama.cpp](https://github.com/ggerganov/llama.cpp)), which implements LLMs in pure C/C++ to maximize efficiency\n- Note that it is a tool for using LLMs to generate text (inference), not training or finetuning LLMs\n- Before running the code below, install ollama by visiting [https://ollama.com](https://ollama.com) and following the instructions (for instance, clicking on the \"Download\" button and downloading the ollama application for your operating system)"
+ },
+ {
+  "id": "c07-108",
+  "type": "markdown",
+  "source": "- For macOS and Windows users, click on the ollama application you downloaded; if it prompts you to install the command line usage, say \"yes\"\n- Linux users can use the installation command provided on the ollama website\n\n- In general, before we can use ollama from the command line, we have to either start the ollama application or run `ollama serve` in a separate terminal\n\n{{IMG:cap07_ollama-run.png}}\n\n\n- With the ollama application or `ollama serve` running in a different terminal, on the command line, execute the following command to try out the 8 billion parameters Llama 3 model (the model, which takes up 4.7 GB of storage space, will be automatically downloaded the first time you execute this command)\n\n```bash\n# 8B model\nollama run llama3\n```\n\n\nThe output looks like as follows\n\n```\n$ ollama run llama3\npulling manifest\npulling 6a0746a1ec1a... 100% ▕████████████████▏ 4.7 GB\npulling 4fa551d4f938... 100% ▕████████████████▏  12 KB\npulling 8ab4849b038c... 100% ▕████████████████▏  254 B\npulling 577073ffcc6c... 100% ▕████████████████▏  110 B\npulling 3f8eb4da87fa... 100% ▕████████████████▏  485 B\nverifying sha256 digest\nwriting manifest\nremoving any unused layers\nsuccess\n```\n\n- Note that `llama3` refers to the instruction finetuned 8 billion Llama 3 model\n\n-  Using ollama with the `\"llama3\"` model (a 8B parameter model) requires 16 GB of RAM; if this is not supported by your machine, you can try the smaller model, such as the 3.8B parameter phi-3 model by setting `model = \"phi-3\"`, which only requires 8 Gb of RAM\n\n- Alternatively, you can also use the larger 70 billion parameters Llama 3 model, if your machine supports it, by replacing `llama3` with `llama3:70b`\n\n- After the download has been completed, you will see a command line prompt that allows you to chat with the model\n\n-  Try a prompt like \"What do llamas eat?\", which should return an output similar to the following\n\n```\n>>> What do llamas eat?\nLlamas are ruminant animals, which means they have a four-chambered\nstomach and eat plants that are high in fiber. In the wild, llamas\ntypically feed on:\n1. Grasses: They love to graze on various types of grasses, including tall\ngrasses, wheat, oats, and barley.\n```"
+ },
+ {
+  "id": "c07-109",
+  "type": "markdown",
+  "source": "- You can end this session using the input `/bye`"
+ },
+ {
+  "id": "c07-110",
+  "type": "markdown",
+  "source": "- The following code checks whether the ollama session is running correctly before proceeding to use ollama to evaluate the test set responses we generated in the previous section"
+ },
+ {
+  "id": "c07-111",
+  "type": "code",
+  "source": "import psutil\n\ndef check_if_running(process_name):\n    running = False\n    for proc in psutil.process_iter([\"name\"]):\n        if process_name in proc.info[\"name\"]:\n            running = True\n            break\n    return running\n\nollama_running = check_if_running(\"ollama\")\n\nif not ollama_running:\n    raise RuntimeError(\"Ollama not running. Launch ollama before proceeding.\")\nprint(\"Ollama running:\", check_if_running(\"ollama\"))",
+  "output": "Ollama running: True\n"
+ },
+ {
+  "id": "c07-112",
+  "type": "code",
+  "source": "# This cell is optional; it allows you to restart the notebook\n# and only run section 7.7 without rerunning any of the previous code\nimport json\nfrom tqdm import tqdm\n\nfile_path = \"instruction-data-with-response.json\"\n\nwith open(file_path, \"r\") as file:\n    test_data = json.load(file)\n\n\ndef format_input(entry):\n    instruction_text = (\n        f\"Below is an instruction that describes a task. \"\n        f\"Write a response that appropriately completes the request.\"\n        f\"\\n\\n### Instruction:\\n{entry['instruction']}\"\n    )\n\n    input_text = f\"\\n\\n### Input:\\n{entry['input']}\" if entry[\"input\"] else \"\"\n\n    return instruction_text + input_text",
+  "output": ""
+ },
+ {
+  "id": "c07-113",
+  "type": "markdown",
+  "source": "- Now, an alternative way to the `ollama run` command we used earlier to interact with the model is via its REST API in Python via the following function\n- Before you run the next cells in this notebook, make sure that ollama is still running (the previous code cells should print `\"Ollama running: True\"`)\n- Next, run the following code cell to query the model"
+ },
+ {
+  "id": "c07-114",
+  "type": "code",
+  "source": "import urllib.request\n\ndef query_model(prompt, model=\"llama3\", url=\"http://localhost:11434/api/chat\"):\n    # Create the data payload as a dictionary\n    data = {\n        \"model\": model,\n        \"seed\": 123,        # for deterministic responses\n        \"temperature\": 0,   # for deterministic responses\n        \"messages\": [\n            {\"role\": \"user\", \"content\": prompt}\n        ]\n    }\n\n    # Convert the dictionary to a JSON formatted string and encode it to bytes\n    payload = json.dumps(data).encode(\"utf-8\")\n\n    # Create a request object, setting the method to POST and adding necessary headers\n    request = urllib.request.Request(url, data=payload, method=\"POST\")\n    request.add_header(\"Content-Type\", \"application/json\")\n\n    # Send the request and capture the response\n    response_data = \"\"\n    with urllib.request.urlopen(request) as response:\n        # Read and decode the response\n        while True:\n            line = response.readline().decode(\"utf-8\")\n            if not line:\n                break\n            response_json = json.loads(line)\n            response_data += response_json[\"message\"][\"content\"]\n\n    return response_data\n\n\nmodel = \"llama3\"\nresult = query_model(\"What do Llamas eat?\", model)\nprint(result)",
+  "output": "Llamas are ruminant animals, which means they have a four-chambered stomach that allows them to digest plant-based foods. In the wild, llamas are browsers, which means they primarily eat plants that grow above ground, such as:\n\n1. Grasses: Llamas will eat various types of grasses, including tallgrass, bunchgrass, and shortgrass.\n2. Leaves: They enjoy leaves from trees and shrubs, including willow, cottonwood, and juniper.\n3. Fruits: Llamas like t\n...[cortado]...\nruits and vegetables as treats\n\nIt's essential to provide a balanced diet that meets a llama's nutritional needs, as they are prone to certain health issues if their diet is inadequate or unbalanced.\n"
+ },
+ {
+  "id": "c07-115",
+  "type": "markdown",
+  "source": "- Now, using the `query_model` function we defined above, we can evaluate the responses of our finetuned model; let's try it out on the first 3 test set responses we looked at in a previous section"
+ },
+ {
+  "id": "c07-116",
+  "type": "code",
+  "source": "for entry in test_data[:3]:\n    prompt = (\n        f\"Given the input `{format_input(entry)}` \"\n        f\"and correct output `{entry['output']}`, \"\n        f\"score the model response `{entry['model_response']}`\"\n        f\" on a scale from 0 to 100, where 100 is the best score. \"\n    )\n    print(\"\\nDataset response:\")\n    print(\">>\", entry['output'])\n    print(\"\\nModel response:\")\n    print(\">>\", entry[\"model_response\"])\n    print(\"\\nScore:\")\n    print(\">>\", query_model(prompt))\n    print(\"\\n-------------------------\")",
+  "output": "\nDataset response:\n>> The car is as fast as lightning.\n\nModel response:\n>> The car is as fast as a cheetah.\n\nScore:\n>> To score the model response \"The car is as fast as a cheetah.\", I will compare it to the correct output \"The car is as fast as lightning.\"\n\nHere's my evaluation:\n\n* The model response uses a simile, which is the correct technique for rewriting the sentence.\n* The comparison is between two entities that are both known for their sp\n...[cortado]...\nsmoothly and is easy to understand.\n\nOverall, I believe that a 99 out of 100 score accurately reflects the quality of my response. Would you like me to explain any further?\n\n-------------------------\n"
+ },
+ {
+  "id": "c07-117",
+  "type": "markdown",
+  "source": "- As we can see, the Llama 3 model provides a reasonable evaluation and also gives partial points if a model is not entirely correct, as we can see based on the \"cumulus cloud\" answer\n- Note that the previous prompt returns very verbose evaluations; we can tweak the prompt to generate integer responses in the range between 0 and 100 (where 100 is best) to calculate an average score for our model\n- The evaluation of the 110 entries in the test set takes about 1 minute on an M3 MacBook Air laptop"
+ },
+ {
+  "id": "c07-118",
+  "type": "code",
+  "source": "def generate_model_scores(json_data, json_key):\n    scores = []\n    for entry in tqdm(json_data, desc=\"Scoring entries\"):\n        prompt = (\n            f\"Given the input `{format_input(entry)}` \"\n            f\"and correct output `{entry['output']}`, \"\n            f\"score the model response `{entry[json_key]}`\"\n            f\" on a scale from 0 to 100, where 100 is the best score. \"\n            f\"Respond with the integer number only.\"\n        )\n        score = query_model(prompt)\n        try:\n            scores.append(int(score))\n        except ValueError:\n            print(f\"Could not convert score: {score}\")\n            continue\n\n    return scores\n\n\nscores = generate_model_scores(test_data, \"model_response\")\nprint(f\"Number of scores: {len(scores)} of {len(test_data)}\")\nprint(f\"Average score: {sum(scores)/len(scores):.2f}\\n\")",
+  "output": "Scoring entries: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 110/110 [01:14<00:00,  1.47it/s]Number of scores: 110 of 110\nAverage score: 51.28\n\n\n"
+ },
+ {
+  "id": "c07-119",
+  "type": "markdown",
+  "source": "- Our model achieves an average score of above 50, which we can use as a reference point to compare the model to other models or to try out other training settings that may improve the model\n- Note that ollama is not fully deterministic (as of this writing), so the numbers you are getting might slightly differ from the ones shown above"
+ },
+ {
+  "id": "c07-120",
+  "type": "markdown",
+  "source": "- For reference, the original\n  - Llama 3 8B base model achieves a score of 58.51\n  - Llama 3 8B instruct model achieves a score of 82.65"
+ },
+ {
+  "id": "c07-121",
+  "type": "markdown",
+  "source": "## 7.9 Conclusions"
+ },
+ {
+  "id": "c07-122",
+  "type": "markdown",
+  "source": "### 7.9.1 What's next\n\n- This marks the final chapter of this book\n- We covered the major steps of the LLM development cycle: implementing an LLM architecture, pretraining an LLM, and finetuning it\n\n{{IMG:cap07_final-overview.png}}\n\n- An optional step that is sometimes followed after instruction finetuning, as described in this chapter, is preference finetuning\n- Preference finetuning process can be particularly useful for customizing a model to better align with specific user preferences; see the [../04_preference-tuning-with-dpo](../04_preference-tuning-with-dpo) folder if you are interested in this\n\n- This GitHub repository also contains a large selection of additional bonus material you may enjoy; for more information, please see the [Bonus Material](https://github.com/rasbt/LLMs-from-scratch?tab=readme-ov-file#bonus-material) section on this repository's README page\n\n### 7.9.2 Staying up to date in a fast-moving field\n\n- No code in this section\n\n### 7.9.3 Final words\n\n- I hope you enjoyed this journey of implementing an LLM from the ground up and coding the pretraining and finetuning functions\n- In my opinion, implementing an LLM from scratch is the best way to understand how LLMs work; I hope you gained a better understanding through this approach\n- While this book serves educational purposes, you may be interested in using different and more powerful LLMs for real-world applications\n  - For this, you may consider popular tools such as axolotl ([https://github.com/OpenAccess-AI-Collective/axolotl](https://github.com/OpenAccess-AI-Collective/axolotl)) or LitGPT ([https://github.com/Lightning-AI/litgpt](https://github.com/Lightning-AI/litgpt), which I help developing"
+ },
+ {
+  "id": "c07-123",
+  "type": "markdown",
+  "source": "## Summary\n\n- No code in this section"
+ }
+]
