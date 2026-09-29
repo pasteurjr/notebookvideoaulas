@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright
 URL = sys.argv[1]
 BASE = URL.split("/notebooks/")[0]
 TOKEN = URL.split("token=")[-1]
+PREFIXO = URL.split("/notebooks/")[1].split("?")[0].rpartition("/")[0]   # pasta do notebook dentro do servidor Jupyter
 PASTA = Path(__file__).parent / "telas"
 PASTA.mkdir(exist_ok=True)
 
@@ -147,7 +148,7 @@ with sync_playwright() as p:
         print("capturada:", nome)
 
     for nome, caminho in ARQUIVOS:
-        pagina.goto(f"{BASE}/edit/{caminho}?token={TOKEN}")
+        pagina.goto(f"{BASE}/edit/{PREFIXO + '/' if PREFIXO else ''}{caminho}?token={TOKEN}")
         pagina.wait_for_selector(".cm-content", timeout=30000)
         pagina.wait_for_timeout(2500)
         pagina.screenshot(path=PASTA / f"{nome}.png")
