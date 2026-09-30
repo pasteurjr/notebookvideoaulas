@@ -1,0 +1,10 @@
+# Ambiente local (no Google Colab tudo isso já vem instalado, menos o tiktoken)
+torch
+tiktoken
+tensorflow
+matplotlib
+pandas
+tqdm
+requests
+psutil
+jupyter

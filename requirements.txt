@@ -11,3 +11,5 @@ matplotlib
 scikit-learn
 pillow
 jupyter
+torch       # aula do transformer (NoteLLM)
+tiktoken    # aula do transformer (NoteLLM)

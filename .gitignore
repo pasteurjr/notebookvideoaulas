@@ -3,22 +3,20 @@
 *.env
 !.env.exemplo
 
-# ===== Dados: ficam no Google Drive (pasta "notebooksvideos"), não no GitHub =====
-notedeeplearning/aulacovidct/dados/
-notedeeplearning/aulacovidct/modelos/
+# ===== Vídeos e dados grandes: não vão para o GitHub (dados ficam no Google Drive) =====
+*.mp4
+*/notebook/dados/datasetct/
+*/notebook/dados/nih/
+*/notebook/dados/gpt2/
 
-# ===== Cópias brutas dos projetos/cursos originais (grandes e com chaves antigas no código) =====
-noteagentes/multi-ai-agent-systems-crewai/
-noteagentes/practical-multi-ai-agents-crewai/
-notedeeplearning/keras-covid19/
-noteiaformed/aiformedicine/
-
-# ===== Arquivos gerados / temporários =====
-*.zip
+# ===== Gerados ao executar os notebooks =====
+*/notebook/modelos/
+*.pth
 *.h5
 *.keras
-*.model
-jupyter.log
+*.zip
+04_transformer_llm_do_zero/notebook/*.csv
+04_transformer_llm_do_zero/notebook/*-plot.pdf
+04_transformer_llm_do_zero/notebook/instruction-data-with-response.json
 .ipynb_checkpoints/
 __pycache__/
-noteagentes/noteaulaagentes/video/secao_colab_no_notebook.png
